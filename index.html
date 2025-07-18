@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dots and Boxes</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+    }
+
+    h1 {
+      margin: 20px;
+      color: #38bdf8;
+    }
+
+    #controls {
+      margin-bottom: 10px;
+    }
+
+    input {
+      padding: 10px;
+      margin: 5px;
+      border-radius: 5px;
+      border: none;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 10px 20px;
+      margin: 5px;
+      background-color: #1e40af;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    canvas {
+      background: #1e293b;
+      margin-top: 10px;
+      border-radius: 8px;
+      touch-action: manipulation;
+    }
+
+    #info {
+      margin: 15px;
+      font-size: 18px;
+    }
+
+    /* Popup styles */
+    #popup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      color: black;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      z-index: 1000;
+      display: none;
+    }
+
+    #popup h2 {
+      margin-bottom: 20px;
+    }
+
+    #popup button {
+      background-color: #1e40af;
+      color: white;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: none;
+      z-index: 999;
+    }
+  </style>
+</head>
+<body>
+  <h1>✨ Dots & Boxes</h1>
+  <div id="controls">
+    <input type="text" id="player1" placeholder="Player 1 Name" />
+    <input type="text" id="player2" placeholder="Player 2 Name" />
+    <button onclick="initGame()">Start Game</button>
+  </div>
+
+  <canvas id="gameCanvas" width="480" height="480"></canvas>
+  <div id="info"></div>
+
+  <!-- Winner Popup -->
+  <div id="overlay"></div>
+  <div id="popup">
+    <h2 id="resultText">🎉 Winner!</h2>
+    <button onclick="restartGame()">🔁 Restart Game</button>
+  </div>
+
+  <!-- Confetti JS -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const GRID = 5;
+    const GAP = 90;
+    const DOT_RADIUS = 6;
+    const OFFSET = 30;
+
+    let lines = {}, boxes = {};
+    let players = [], initials = [];
+    let current = 0;
+    let score = [0, 0];
+
+    function initGame() {
+      const p1 = document.getElementById("player1").value || "P1";
+      const p2 = document.getElementById("player2").value || "P2";
+      players = [p1, p2];
+      initials = [p1[0].toUpperCase(), p2[0].toUpperCase()];
+      current = 0;
+      lines = {};
+      boxes = {};
+      score = [0, 0];
+      draw();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw dots
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
+          ctx.beginPath();
+          ctx.arc(OFFSET + c * GAP, OFFSET + r * GAP, DOT_RADIUS, 0, Math.PI * 2);
+          ctx.fillStyle = "#38bdf8";
+          ctx.fill();
+        }
+      }
+
+      // Draw lines
+      for (const key in lines) {
+        const [type, r, c] = key.split("-").map((v, i) => (i === 0 ? v : parseInt(v)));
+        ctx.beginPath();
+        const x = OFFSET + c * GAP;
+        const y = OFFSET + r * GAP;
+        if (type === "h") {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + GAP, y);
+        } else {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x, y + GAP);
+        }
+        ctx.strokeStyle = lines[key] === 0 ? "#60a5fa" : "#f472b6";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+
+      // Draw boxes
+      for (const key in boxes) {
+        const [r, c] = key.split(",").map(Number);
+        const x = OFFSET + c * GAP + GAP / 2;
+        const y = OFFSET + r * GAP + GAP / 2;
+        ctx.fillStyle = boxes[key] === 0 ? "#60a5fa" : "#f472b6";
+        ctx.font = "bold 28px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initials[boxes[key]], x, y);
+      }
+
+      document.getElementById("info").innerHTML = `
+        ${players[0]}: ${score[0]} | ${players[1]}: ${score[1]} <br>
+        🔄 Turn: ${players[current]}
+      `;
+    }
+
+    canvas.addEventListener("click", handleClick);
+    canvas.addEventListener("touchstart", (e) => {
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      handleClick({ clientX: touch.clientX, clientY: touch.clientY, preventDefault: () => e.preventDefault() });
+    });
+
+    function handleClick(e) {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      const buffer = 10;
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID - 1; c++) {
+          const x1 = OFFSET + c * GAP;
+          const y1 = OFFSET + r * GAP;
+          if (x >= x1 && x <= x1 + GAP && Math.abs(y - y1) < buffer) {
+            const key = `h-${r}-${c}`;
+            if (!lines[key]) {
+              lines[key] = current;
+              processBoxes(r, c, "h");
+              draw();
+              return;
+            }
+          }
+        }
+      }
+
+      for (let r = 0; r < GRID - 1; r++) {
+        for (let c = 0; c < GRID; c++) {
+          const x1 = OFFSET + c * GAP;
+          const y1 = OFFSET + r * GAP;
+          if (y >= y1 && y <= y1 + GAP && Math.abs(x - x1) < buffer) {
+            const key = `v-${r}-${c}`;
+            if (!lines[key]) {
+              lines[key] = current;
+              processBoxes(r, c, "v");
+              draw();
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    function processBoxes(r, c, dir) {
+      let filled = false;
+      const positions = dir === "h" ? [[r - 1, c], [r, c]] : [[r, c - 1], [r, c]];
+      for (const [br, bc] of positions) {
+        if (
+          lines[`h-${br}-${bc}`] !== undefined &&
+          lines[`h-${br + 1}-${bc}`] !== undefined &&
+          lines[`v-${br}-${bc}`] !== undefined &&
+          lines[`v-${br}-${bc + 1}`] !== undefined
+        ) {
+          const key = `${br},${bc}`;
+          if (!boxes[key]) {
+            boxes[key] = current;
+            score[current]++;
+            filled = true;
+          }
+        }
+      }
+
+      if (!filled) current = 1 - current;
+      if (Object.keys(boxes).length === (GRID - 1) ** 2) {
+        setTimeout(() => endGame(), 200);
+      }
+    }
+
+    function endGame() {
+      draw();
+      let result = "🤝 It's a Draw!";
+      if (score[0] > score[1]) result = `🏆 ${players[0]} Wins!`;
+      else if (score[1] > score[0]) result = `🏆 ${players[1]} Wins!`;
+
+      // Confetti blast
+      confetti({
+        particleCount: 150,
+        spread: 90,
+        origin: { y: 0.6 }
+      });
+
+      // Show popup
+      document.getElementById("resultText").innerText = result;
+      document.getElementById("popup").style.display = "block";
+      document.getElementById("overlay").style.display = "block";
+    }
+
+    function restartGame() {
+      document.getElementById("popup").style.display = "none";
+      document.getElementById("overlay").style.display = "none";
+      initGame();
+    }
+  </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dots and Boxes - AI Levels</title>
+  <style>
+    body { background: #0f172a; color: white; font-family: sans-serif; text-align: center; margin: 0; }
+    h1 { color: #38bdf8; margin: 16px; }
+    canvas { background: #1e293b; border-radius: 8px; margin-top: 12px; touch-action: manipulation; }
+    input, select, button {
+      padding: 10px;
+      margin: 6px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: none;
+    }
+    button { background-color: #1e40af; color: white; cursor: pointer; }
+    #info { margin: 12px; font-size: 18px; }
+    #popup, #overlay {
+      position: fixed;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: none;
+      z-index: 999;
+    }
+    #popup {
+      background: white; color: black; padding: 20px;
+      border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      z-index: 1001;
+    }
+    #overlay { background: rgba(0, 0, 0, 0.5); width: 100vw; height: 100vh; }
+    #confetti-container {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 1000;
+    }
+    .confetti {
+      position: absolute;
+      width: 10px; height: 10px;
+      background: red;
+      opacity: 0.8;
+      animation: fall 3s linear forwards;
+    }
+    @keyframes fall {
+      0% { transform: translateY(0) rotate(0); }
+      100% { transform: translateY(100vh) rotate(720deg); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Dots & Boxes (AI Difficulty)</h1>
+  <div>
+    <input id="player1" placeholder="Your Name">
+    <select id="mode">
+      <option value="ai">Play vs AI</option>
+      <option value="friend">Play with Friend</option>
+    </select>
+    <select id="aiLevel">
+      <option value="easy">Easy AI</option>
+      <option value="medium">Medium AI</option>
+      <option value="hard">Hard AI</option>
+    </select>
+    <button onclick="initGame()">Start Game</button>
+  </div>
+  <canvas id="gameCanvas" width="480" height="480"></canvas>
+  <div id="info"></div>
+  <div id="overlay"></div>
+  <div id="popup">
+    <h2 id="resultText"></h2>
+    <button onclick="restartGame()">Restart</button>
+  </div>
+  <div id="confetti-container"></div>
+  <audio id="winSound" src="https://www.soundjay.com/human/applause-8.mp3"></audio>
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const GRID = 5, GAP = 90, OFFSET = 30, DOT_RADIUS = 6;
+    let lines = {}, boxes = {}, players = [], initials = [], current = 0, score = [0, 0], mode = "ai", aiLevel = "easy";
+
+    function initGame() {
+      document.getElementById("confetti-container").innerHTML = "";
+      const p1 = document.getElementById("player1").value || "You";
+      const p2 = "AI";
+      players = [p1, p2];
+      initials = [p1[0].toUpperCase(), p2[0]];
+      mode = document.getElementById("mode").value;
+      aiLevel = document.getElementById("aiLevel").value;
+      current = 0;
+      lines = {}; boxes = {}; score = [0, 0];
+      draw();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
+          ctx.beginPath();
+          ctx.arc(OFFSET + c * GAP, OFFSET + r * GAP, DOT_RADIUS, 0, Math.PI * 2);
+          ctx.fillStyle = "#38bdf8";
+          ctx.fill();
+        }
+      }
+      for (let key in lines) {
+        const [type, r, c] = key.split("-").map((v, i) => i === 0 ? v : +v);
+        const x = OFFSET + c * GAP, y = OFFSET + r * GAP;
+        ctx.beginPath();
+        if (type === "h") ctx.moveTo(x, y), ctx.lineTo(x + GAP, y);
+        else ctx.moveTo(x, y), ctx.lineTo(x, y + GAP);
+        ctx.strokeStyle = lines[key] === 0 ? "#60a5fa" : "#f472b6";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      for (let key in boxes) {
+        const [r, c] = key.split(",").map(Number);
+        const x = OFFSET + c * GAP + GAP / 2;
+        const y = OFFSET + r * GAP + GAP / 2;
+        ctx.fillStyle = boxes[key] === 0 ? "#60a5fa" : "#f472b6";
+        ctx.font = "bold 28px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initials[boxes[key]], x, y);
+      }
+      document.getElementById("info").innerText = `${players[0]}: ${score[0]} | ${players[1]}: ${score[1]} | Turn: ${players[current]}`;
+    }
+
+    function launchConfetti() {
+      const confettiContainer = document.getElementById("confetti-container");
+      for (let i = 0; i < 100; i++) {
+        const confetti = document.createElement("div");
+        confetti.className = "confetti";
+        confetti.style.left = Math.random() * 100 + "vw";
+        confetti.style.backgroundColor = `hsl(${Math.random() * 360}, 70%, 60%)`;
+        confetti.style.animationDuration = (2 + Math.random() * 2) + "s";
+        confettiContainer.appendChild(confetti);
+      }
+    }
+
+    function endGame() {
+      const winSound = document.getElementById("winSound");
+      let result = score[0] > score[1] ? `${players[0]} Wins!` : score[0] < score[1] ? `${players[1]} Wins!` : "Draw!";
+      document.getElementById("resultText").innerText = result;
+      document.getElementById("popup").style.display = "block";
+      document.getElementById("overlay").style.display = "block";
+      winSound.play();
+      launchConfetti();
+    }
+
+    function restartGame() {
+      document.getElementById("popup").style.display = "none";
+      document.getElementById("overlay").style.display = "none";
+      initGame();
+    }
+  </script>
+</body>
+</html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dots and Boxes - Online Multiplayer</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <style>
+    body { background: #0f172a; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 0; }
+    h1 { color: #38bdf8; margin-top: 16px; }
+    canvas { background: #1e293b; margin-top: 20px; border-radius: 10px; touch-action: manipulation; }
+    input, button { margin: 8px; padding: 10px; border: none; border-radius: 5px; font-size: 16px; }
+    button { background-color: #2563eb; color: white; cursor: pointer; }
+    #info { margin-top: 10px; font-size: 18px; }
+    #emojiList { margin-top: 10px; }
+    .emoji-btn { font-size: 20px; margin: 3px; cursor: pointer; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 6px; }
+  </style>
+</head>
+<body>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dots and Boxes - Online Multiplayer</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    body { background: #0f172a; color: white; font-family: sans-serif; text-align: center; margin: 0; padding: 0; }
+    h1 { color: #38bdf8; margin-top: 16px; }
+    canvas { background: #1e293b; margin-top: 20px; border-radius: 10px; touch-action: manipulation; }
+    input, button { margin: 8px; padding: 10px; border: none; border-radius: 5px; font-size: 16px; }
+    button { background-color: #2563eb; color: white; cursor: pointer; }
+    #info { margin-top: 10px; font-size: 18px; }
+    #emojiList { margin-top: 10px; }
+    .emoji-btn { font-size: 20px; margin: 3px; cursor: pointer; background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 6px; }
+    #popup {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #1e293b; border: 2px solid #38bdf8; border-radius: 10px;
+      padding: 20px; display: none; z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <h1>Dots and Boxes - Online Multiplayer</h1>
+  <div>
+    <input id="playerName" placeholder="Your Name">
+    <input id="roomCode" placeholder="Room Code">
+    <button onclick="createRoom()">Create Room</button>
+    <button onclick="joinRoom()">Join Room</button>
+    <div id="emojiList">
+      <span class="emoji-btn" onclick="addEmoji('😀')">😀</span>
+      <span class="emoji-btn" onclick="addEmoji('😎')">😎</span>
+      <span class="emoji-btn" onclick="addEmoji('🔥')">🔥</span>
+      <span class="emoji-btn" onclick="addEmoji('💪')">💪</span>
+      <span class="emoji-btn" onclick="addEmoji('🎉')">🎉</span>
+      <span class="emoji-btn" onclick="addEmoji('🥇')">🥇</span>
+      <span class="emoji-btn" onclick="addEmoji('😢')">😢</span>
+    </div>
+  </div>
+  <canvas id="canvas" width="480" height="480"></canvas>
+  <div id="info"></div>
+  <div id="popup">
+    <h2 id="winnerText"></h2>
+    <button onclick="restartGame()">🔁 Restart</button>
+  </div>
+  <audio id="clickSound" src="https://www.soundjay.com/buttons/button-37.mp3"></audio>
+  <audio id="winSound" src="https://www.soundjay.com/human/applause-8.mp3"></audio>
+  <script>
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT_ID.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const GRID = 5, GAP = 90, OFFSET = 30, DOT_RADIUS = 6;
+
+    let room = "", playerName = "", playerIndex = 0;
+    let lines = {}, boxes = {}, currentTurn = 0;
+    let players = ["", ""];
+
+    function addEmoji(emoji) {
+      const input = document.getElementById("playerName");
+      input.value += emoji;
+    }
+
+    function createRoom() {
+      playerName = document.getElementById("playerName").value;
+      room = document.getElementById("roomCode").value;
+      if (!playerName || !room) return alert("Enter name and room code");
+      db.ref("rooms/" + room).set({ players: [playerName], lines: {}, boxes: {}, currentTurn: 0 });
+      playerIndex = 0;
+      setupListeners();
+    }
+
+    function joinRoom() {
+      playerName = document.getElementById("playerName").value;
+      room = document.getElementById("roomCode").value;
+      if (!playerName || !room) return alert("Enter name and room code");
+      const roomRef = db.ref("rooms/" + room + "/players");
+      roomRef.once("value", snap => {
+        const val = snap.val();
+        if (val && val.length < 2) {
+          val.push(playerName);
+          roomRef.set(val);
+          playerIndex = 1;
+          setupListeners();
+        } else {
+          alert("Room full or doesn't exist.");
+        }
+      });
+    }
+
+    function setupListeners() {
+      const roomRef = db.ref("rooms/" + room);
+      roomRef.on("value", snap => {
+        const data = snap.val();
+        if (!data) return;
+        lines = data.lines || {};
+        boxes = data.boxes || {};
+        currentTurn = data.currentTurn;
+        players = data.players || players;
+        draw();
+        checkGameEnd();
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+        ctx.beginPath();
+        ctx.arc(OFFSET + c * GAP, OFFSET + r * GAP, DOT_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fill();
+      }
+      for (let key in lines) {
+        const [type, r, c] = key.split("-");
+        const x = OFFSET + c * GAP;
+        const y = OFFSET + r * GAP;
+        ctx.beginPath();
+        if (type === "h") ctx.moveTo(x, y), ctx.lineTo(x + GAP, y);
+        else ctx.moveTo(x, y), ctx.lineTo(x, y + GAP);
+        ctx.strokeStyle = lines[key] === 0 ? "#60a5fa" : "#f472b6";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      for (let key in boxes) {
+        const [r, c] = key.split(",");
+        const x = OFFSET + c * GAP + GAP / 2;
+        const y = OFFSET + r * GAP + GAP / 2;
+        ctx.fillStyle = boxes[key] === 0 ? "#60a5fa" : "#f472b6";
+        ctx.font = "bold 28px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(players[boxes[key]][0], x, y);
+      }
+      document.getElementById("info").innerText = players.length === 2 ? `${players[0]} vs ${players[1]} | Turn: ${players[currentTurn]}` : "Waiting for another player...";
+    }
+
+    canvas.addEventListener("click", e => {
+      if (players.length < 2 || currentTurn !== playerIndex) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const clickedLine = getClickedLine(x, y);
+      if (!clickedLine || lines[clickedLine]) return;
+      document.getElementById("clickSound").play();
+      lines[clickedLine] = playerIndex;
+      const scored = updateBoxes(clickedLine);
+      db.ref("rooms/" + room).update({ lines, boxes, currentTurn: scored ? currentTurn : 1 - currentTurn });
+    });
+
+    function getClickedLine(x, y) {
+      const buffer = 10;
+      for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID - 1; c++) {
+        const x1 = OFFSET + c * GAP, y1 = OFFSET + r * GAP;
+        if (x >= x1 && x <= x1 + GAP && Math.abs(y - y1) < buffer) return `h-${r}-${c}`;
+      }
+      for (let r = 0; r < GRID - 1; r++) for (let c = 0; c < GRID; c++) {
+        const x1 = OFFSET + c * GAP, y1 = OFFSET + r * GAP;
+        if (y >= y1 && y <= y1 + GAP && Math.abs(x - x1) < buffer) return `v-${r}-${c}`;
+      }
+      return null;
+    }
+
+    function updateBoxes(key) {
+      const [type, r, c] = key.split("-").map((v, i) => i === 0 ? v : +v);
+      const checks = type === "h" ? [[r - 1, c], [r, c]] : [[r, c - 1], [r, c]];
+      let scored = false;
+      for (let [br, bc] of checks) {
+        if ([`h-${br}-${bc}`, `h-${br+1}-${bc}`, `v-${br}-${bc}`, `v-${br}-${bc+1}`].every(k => lines[k] !== undefined)) {
+          if (!boxes[`${br},${bc}`]) {
+            boxes[`${br},${bc}`] = playerIndex;
+            scored = true;
+          }
+        }
+      }
+      return scored;
+    }
+
+    function checkGameEnd() {
+      const totalBoxes = (GRID - 1) * (GRID - 1);
+      if (Object.keys(boxes).length === totalBoxes) {
+        let scores = [0, 0];
+        for (let key in boxes) scores[boxes[key]]++;
+        const winner = scores[0] === scores[1] ? "It's a Tie!" : `${players[scores[0] > scores[1] ? 0 : 1]} Wins! 🏆`;
+        document.getElementById("winnerText").innerText = winner;
+        document.getElementById("popup").style.display = "block";
+        document.getElementById("winSound").play();
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      }
+    }
+
+    function restartGame() {
+      db.ref("rooms/" + room).update({ lines: {}, boxes: {}, currentTurn: 0 });
+      document.getElementById("popup").style.display = "none";
+    }
+  </script>
+</body>
+</html>
+
+
